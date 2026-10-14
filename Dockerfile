@@ -15,6 +15,8 @@ RUN apt-get update && \
         build-essential \
         python3.12-dev \
         git \
+        curl \
+        ca-certificates \
         && \
     rm -rf /var/lib/apt/lists/*
 
@@ -47,7 +49,6 @@ RUN uv pip install --python /opt/venv/bin/python \
 
 # ---------------------------------------------------------
 # KJNodes
-# Provides PathchSageAttentionKJ
 # ---------------------------------------------------------
 RUN mkdir -p /comfyui/custom_nodes && \
     git clone --depth 1 \
@@ -66,6 +67,22 @@ RUN uv pip install --python /opt/venv/bin/python \
     sageattention
 
 # ---------------------------------------------------------
+# Veda Sparse Attention - release 0.3.1 source revision
+# Keep the existing ComfyUI, PyTorch, CUDA and LoRAs unchanged.
+# ---------------------------------------------------------
+ARG VEDA_COMMIT=8d7ac15
+
+RUN git clone \
+        https://github.com/veda-sparse/Veda-on-ComfyUI.git \
+        /comfyui/custom_nodes/Veda-on-ComfyUI && \
+    git -C /comfyui/custom_nodes/Veda-on-ComfyUI \
+        checkout --detach "${VEDA_COMMIT}" && \
+    uv pip install --python /opt/venv/bin/python \
+        -r /comfyui/custom_nodes/Veda-on-ComfyUI/requirements.txt && \
+    git -C /comfyui/custom_nodes/Veda-on-ComfyUI \
+        rev-parse HEAD > /comfyui/veda_revision.txt
+
+# ---------------------------------------------------------
 # Network volume model paths
 # ---------------------------------------------------------
 COPY extra_model_paths.yaml /comfyui/extra_model_paths.yaml
@@ -73,7 +90,7 @@ COPY extra_model_paths.yaml /comfyui/extra_model_paths.yaml
 # ---------------------------------------------------------
 # Final verification
 # ---------------------------------------------------------
-RUN /opt/venv/bin/python - <<'PY'
+RUN /opt/venv/bin/python - <<'VERIFY'
 import os
 import shutil
 import torch
@@ -83,7 +100,12 @@ import triton
 print("PyTorch:", torch.__version__)
 print("PyTorch CUDA:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
-print("GPU capability:", torch.cuda.get_device_capability() if torch.cuda.is_available() else None)
+print(
+    "GPU capability:",
+    torch.cuda.get_device_capability()
+    if torch.cuda.is_available()
+    else None,
+)
 print("Triton:", triton.__version__)
 print("SageAttention: imported successfully")
 print("CC:", os.environ.get("CC"))
@@ -97,6 +119,6 @@ assert shutil.which("g++") is not None
 assert os.path.exists("/usr/include/python3.12/Python.h")
 
 print("All SageAttention/Triton build dependencies OK")
-PY
+VERIFY
 
 WORKDIR /
